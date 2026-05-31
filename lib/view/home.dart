@@ -1,10 +1,11 @@
-// lib/view/home.dart
 import 'package:flutter/material.dart';
-import 'package:movie_app/provider/movie.dart';
-import 'package:movie_app/view/Favorite.dart';
-import 'package:movie_app/view/detail_page.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:movie_app/model/movie_model.dart';
+import 'package:movie_app/services/movie_serv.dart';
+import 'package:movie_app/view/favorite.dart';
 
-import 'package:provider/provider.dart';
+import 'detail_page.dart';
+
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -14,22 +15,24 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  final MovieService _movieService = MovieService();
   final TextEditingController _searchController = TextEditingController();
   bool _isSearching = false;
+  List<MovieModel> _movies = [];
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    Future.microtask(() {
-      if (!mounted) return;
-      Provider.of<MovieProvider>(context, listen: false).fetchMovies();
-    });
+    _loadMovies();
   }
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
+  void _loadMovies() async {
+    final movies = await _movieService.getPopularMovies();
+    setState(() {
+      _movies = movies;
+      _isLoading = false;
+    });
   }
 
   @override
@@ -49,74 +52,52 @@ class _HomePageState extends State<HomePage> {
                   hintStyle: TextStyle(color: Colors.white70),
                   border: InputBorder.none,
                 ),
-                onChanged: (value) => Provider.of<MovieProvider>(context, listen: false).search(value),
+                onChanged: (val) async {
+                  final results = await _movieService.searchMovies(val);
+                  setState(() => _movies = results);
+                },
               )
-            : const Text("MOVIE EXPLORER", style: TextStyle(fontWeight: FontWeight.bold)),
+            : const Text("MOVIE EXPLORER", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.amber)),
         actions: [
           IconButton(
+            icon: Icon(_isSearching ? Icons.close : Icons.search, color: Colors.amber),
             onPressed: () {
               setState(() {
                 _isSearching = !_isSearching;
-                if (!_isSearching) {
-                  _searchController.clear();
-                  Provider.of<MovieProvider>(context, listen: false).fetchMovies();
-                }
+                if (!_isSearching) _loadMovies();
               });
             },
-            icon: Icon(_isSearching ? Icons.close : Icons.search, color: Colors.amber),
           ),
           IconButton(
-      icon: const Icon(Icons.favorite, color: Colors.redAccent),
-      onPressed: () {
-          Navigator.pushReplacement(
-    context,
-    MaterialPageRoute(builder: (context) => const FavoritesPage()),
-  );
-      },
-    ),
+            icon: const Icon(Icons.favorite, color: Colors.redAccent),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const FavoritesPage())),
+          ),
+        
+          IconButton(
+            icon: const Icon(Icons.logout, color: Colors.white70),
+            onPressed: () => FirebaseAuth.instance.signOut(),
+          ),
         ],
       ),
-      body: Consumer<MovieProvider>(
-        builder: (context, movieProvider, child) {
-          if (movieProvider.isLoading) {
-            return const Center(child: CircularProgressIndicator(color: Colors.amber));
-          }
-          if (movieProvider.errorMessage.isNotEmpty) {
-            return Center(child: Text(movieProvider.errorMessage, style: const TextStyle(color: Colors.red)));
-          }
-
-          return GridView.builder(
-            padding: const EdgeInsets.all(16),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              childAspectRatio: 0.7,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: Colors.amber))
+          : GridView.builder(
+              padding: const EdgeInsets.all(16),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                childAspectRatio: 0.7,
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 16,
+              ),
+              itemCount: _movies.length,
+              itemBuilder: (context, index) => _buildMovieCard(_movies[index]),
             ),
-            itemCount: movieProvider.popularMovies.length,
-            itemBuilder: (context, index) {
-              final movie = movieProvider.popularMovies[index];
-              // نمرر الـ movie والـ provider للدالة
-              return _buildMovieCard(context, movie, movieProvider);
-            },
-          );
-        },
-      ),
     );
   }
 
-
-  Widget _buildMovieCard(BuildContext context, movie, MovieProvider provider) {
-    bool isFav = provider.isFavorite(movie);
-
+  Widget _buildMovieCard(MovieModel movie) {
     return GestureDetector(
-      onTap: () {
-  
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => DetailsPage(movie: movie)),
-        );
-      },
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => DetailsPage(movie: movie))),
       child: Container(
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
@@ -125,7 +106,6 @@ class _HomePageState extends State<HomePage> {
         ),
         child: Stack(
           children: [
-         
             Positioned.fill(
               child: Image.network(
                 movie.posterPath,
@@ -133,31 +113,19 @@ class _HomePageState extends State<HomePage> {
                 errorBuilder: (context, error, stackTrace) => Container(color: Colors.grey[900], child: const Icon(Icons.broken_image)),
               ),
             ),
-          
+            // Gradient Overlay
             Positioned.fill(
               child: Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.bottomCenter,
                     end: Alignment.topCenter,
-                    colors: [Colors.black.withOpacity(0.8), Colors.transparent],
+                    colors: [Colors.black.withOpacity(0.9), Colors.transparent],
                   ),
                 ),
               ),
             ),
-            
-            Positioned(
-              top: 5,
-              right: 5,
-              child: CircleAvatar(
-                backgroundColor: Colors.black.withOpacity(0.5),
-                child: IconButton(
-                  icon: Icon(isFav ? Icons.favorite : Icons.favorite_border, color: isFav ? Colors.red : Colors.white),
-                  onPressed: () => provider.toggleFavorite(movie),
-                ),
-              ),
-            ),
-
+            // Info Row
             Positioned(
               bottom: 10,
               left: 10,
@@ -167,14 +135,14 @@ class _HomePageState extends State<HomePage> {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.star, color: Colors.amber, size: 16),
+                      const Icon(Icons.star, color: Colors.amber, size: 14),
                       const SizedBox(width: 4),
-                      Text("${movie.rating}", style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold)),
+                      Text("${movie.rating}", style: const TextStyle(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.bold)),
                     ],
                   ),
                   Text(
                     movie.title,
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),

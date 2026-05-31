@@ -10,11 +10,13 @@ class DetailsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final movieProvider = context.read<MovieProvider>();
+
     return Scaffold(
-      backgroundColor: const Color(0xFF0D1B2A), 
+      backgroundColor: const Color(0xFF0D1B2A),
       body: CustomScrollView(
         slivers: [
-         
+          // الـ Header مع الصورة وزر الرجوع والمفضلة
           SliverAppBar(
             expandedHeight: 500,
             pinned: true,
@@ -23,27 +25,50 @@ class DetailsPage extends StatelessWidget {
               background: Image.network(
                 movie.posterPath,
                 fit: BoxFit.cover,
+                // إضافة معالج للأخطاء في حال فشل تحميل الصورة
+                errorBuilder: (context, error, stackTrace) => 
+                  const Center(child: Icon(Icons.broken_image, size: 50, color: Colors.white24)),
               ),
             ),
             actions: [
-              // زر المفضلة في الـ AppBar
-              Consumer<MovieProvider>(
-                builder: (context, provider, child) {
-                  final isFav = provider.isFavorite(movie);
-                  return IconButton(
-                    icon: Icon(
-                      isFav ? Icons.favorite : Icons.favorite_border,
-                      color: isFav ? Colors.red : Colors.white,
-                      size: 28,
-                    ),
-                    onPressed: () => provider.toggleFavorite(movie),
+              // زر المفضلة المرتبط بـ Firestore
+              FutureBuilder<bool>(
+                future: movieProvider.isMovieFavorite(movie.id),
+                builder: (context, snapshot) {
+                  // حالة التحميل المبدئية للقلب
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)),
+                    );
+                  }
+
+                  final isFav = snapshot.data ?? false;
+
+                  return StatefulBuilder( // لاستخدام تحديث محلي سريع للون القلب
+                    builder: (context, setState) {
+                      bool localIsFav = isFav;
+                      return IconButton(
+                        icon: Icon(
+                          localIsFav ? Icons.favorite : Icons.favorite_border,
+                          color: localIsFav ? Colors.red : Colors.white,
+                          size: 28,
+                        ),
+                        onPressed: () async {
+                          // تحديث قاعدة البيانات
+                          await movieProvider.toggleFavorite(movie);
+                          // تحديث شكل القلب فوراً
+                          (context as Element).markNeedsBuild();
+                        },
+                      );
+                    }
                   );
                 },
               ),
             ],
           ),
 
-       
+          // محتوى الصفحة (العنوان، الوصف، التقييم)
           SliverList(
             delegate: SliverChildListDelegate([
               Padding(
@@ -66,43 +91,43 @@ class DetailsPage extends StatelessWidget {
                           ),
                         ),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                           decoration: BoxDecoration(
                             color: Colors.amber,
-                            borderRadius: BorderRadius.circular(10),
+                            borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
                             "⭐ ${movie.rating}",
-                            style: const TextStyle(fontWeight: FontWeight.bold),
+                            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
                     
-                   
+                    // تاريخ الإصدار
                     Text(
                       "Release Date: ${movie.releaseDate}",
-                      style: const TextStyle(color: Colors.grey, fontSize: 14),
+                      style: const TextStyle(color: Colors.white60, fontSize: 14, letterSpacing: 1.1),
                     ),
-                    const SizedBox(height: 25),
+                    const SizedBox(height: 30),
 
                     // قصة الفيلم (Overview)
                     const Text(
                       "Overview",
                       style: TextStyle(
                         color: Colors.amber,
-                        fontSize: 20,
+                        fontSize: 22,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
                     Text(
                       movie.overview,
                       style: const TextStyle(
                         color: Colors.white70,
                         fontSize: 16,
-                        height: 1.5,
+                        height: 1.6,
                       ),
                     ),
                     const SizedBox(height: 100), 
